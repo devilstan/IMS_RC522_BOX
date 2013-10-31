@@ -143,7 +143,9 @@ String inputString_copy = "";
 String inputString = "";         // a string to hold incoming data
 uchar inputHeadercode[4] = {19, 81, 01, 16};
 int header_hit_counter;
+int checksum;
 boolean stringComplete = false;  // whether the string is complete
+boolean chksum_OK = false;
 uchar tctrl;
 uchar t1;
 uchar t2;
@@ -178,6 +180,7 @@ void setup() {
         t2 = 255;
         ttotal = 255;
         rc = 0;
+        checksum = 0;
         wdt_enable (WDTO_1S);  // reset after one second, if no "pat the dog" received
 }
 
@@ -249,12 +252,38 @@ void loop()
         }
         //訊息處理流程
         wdt_reset();
+        int sum_temp = 0;
+        int mychksum_t = 0;
+        String s;
+        int mycouter = 0;
         switch ( activate_code ) {
             case 0x16:
                 //啟動通信，並通知ＰＣ端準備接收
                 switch ( comstate ) {
                 case 0:
                     sendData[4] = 0x16;
+                    //sum_temp = 0;
+                    //for ( mycouter = 0; mycouter < 15; mycouter++ ) {
+                    //    sum_temp += (int)sendData[mycouter];
+                    //}
+                    //mychksum_t = 0xffff - sum_temp;
+                    //s = decToHex( mychksum_t, 4 );
+                    //sendData[15] = (uchar)hexToDec( s.substring(2) );
+                    sendData[15] = sendData[0] ^
+                                   sendData[1] ^
+                                   sendData[2] ^
+                                   sendData[3] ^
+                                   sendData[4] ^
+                                   sendData[5] ^
+                                   sendData[6] ^
+                                   sendData[7] ^
+                                   sendData[8] ^
+                                   sendData[9] ^
+                                   sendData[10] ^
+                                   sendData[11] ^
+                                   sendData[12] ^
+                                   sendData[13] ^
+                                   sendData[14];
                     digitalWrite(7, HIGH);
                     Serial.write((const uint8_t*)sendData, sizeof(sendData));
                     digitalWrite(7, LOW);
@@ -263,17 +292,16 @@ void loop()
                     break;
                 case 1:
                     if ( t1 > 0 ) {
-                        //Serial.println(t1,DEC);
-                        if ( stringComplete ) {
+                        if ( stringComplete && chksum_OK ) {
                             if ( inputString_copy[4] == (0x16+0x11) ) {
                                 comstate = 2;    //timeout前取得正確ＡＣＫ 則進入狀態2
-                                sendData[15] = 1;
+                                sendData[13] = 1;
                                 tctrl &= ~(1 << 1);
                                 //Serial.println("0");
                             }
                             else {
                                 comstate = 0;    //timeout前取得錯誤ＡＣＫ 則回到狀態0
-                                sendData[15] = 2;
+                                sendData[13] = 2;
                                 sendData[14] = inputString[0];
                                 //tctrl &= ~(1 << 1);
                                 //Serial.println("1");
@@ -283,16 +311,17 @@ void loop()
                             inputString_copy = "";
                             rc = 0;
                             stringComplete = false;
+                            chksum_OK = false;
                         }
                         else {
                             comstate = 1;        //timeout前等待接收時 維持狀態1
-                            sendData[15] = 3;
+                            sendData[13] = 3;
                             //Serial.println("2");
                         }
                     }
                     else {
                         comstate = 0;            //timeout! 則回到狀態0
-                        sendData[15] = 4;
+                        sendData[13] = 4;
                         tctrl &= ~(1 << 1);
                         header_hit_counter = 0;
                         rc = 0;
@@ -304,6 +333,28 @@ void loop()
                     sendData[4] = 0x69;
                     //sendData[23] = 0x1F;
                     c = 0;
+                    //sum_temp = 0;
+                    //for ( mycouter = 0; mycouter < 15; mycouter++ ) {
+                    //    sum_temp += (int)sendData[mycouter];
+                    //}
+                    //mychksum_t = 0xffff - sum_temp;
+                    //s = decToHex( mychksum_t, 4 );
+                    //sendData[15] = (uchar)hexToDec( s.substring(2) );
+                    sendData[15] = sendData[0] ^
+                                   sendData[1] ^
+                                   sendData[2] ^
+                                   sendData[3] ^
+                                   sendData[4] ^
+                                   sendData[5] ^
+                                   sendData[6] ^
+                                   sendData[7] ^
+                                   sendData[8] ^
+                                   sendData[9] ^
+                                   sendData[10] ^
+                                   sendData[11] ^
+                                   sendData[12] ^
+                                   sendData[13] ^
+                                   sendData[14];
                     digitalWrite(7, HIGH);
                     Serial.write((const uint8_t*)sendData, sizeof(sendData));
                     digitalWrite(7, LOW);
@@ -312,17 +363,17 @@ void loop()
                     break;
                 case 3:
                     if ( t2 ) {
-                        if ( stringComplete ) {
+                        if ( stringComplete && chksum_OK ) {
                             if ( inputString_copy[4] == (0x69+0x11) ) {
                                 comstate = 4;    //timeout前取得正確ＡＣＫ 則進入狀態4
-                                sendData[15] = 5;
+                                sendData[13] = 5;
                                 //Serial.print("1");
                                 clearAllState();
                                 tctrl &= ~(1 << 2);
                             }
                             else {
                                 comstate = 2;    //timeout前取得錯誤ＡＣＫ 則回到狀態2
-                                sendData[15] = 6;
+                                sendData[13] = 6;
                                 sendData[14] = inputString[0];
                                 //Serial.print("2");
                                 //tctrl &= ~(1 << 2);
@@ -331,19 +382,19 @@ void loop()
                             inputString = "";
                             inputString_copy = "";
                             rc = 0;
-                                
+                            chksum_OK = false;
                             stringComplete = false;
                         }
                         else {
                             comstate = 3;        //timeout前等待接收時 維持狀態3
-                            sendData[15] = 7;
+                            sendData[13] = 7;
                             //Serial.print("3");
                         }
                     }
                     else {
                         //t2=0 (timeout)
                         comstate = 2;            //timeout! 則回到狀態2
-                        sendData[15] = 8;
+                        sendData[13] = 8;
                         tctrl &= ~(1 << 2);
                         header_hit_counter = 0;
                         rc = 0;
@@ -409,27 +460,94 @@ void serialEvent() {
     char inChar = (char)Serial.read();
     digitalWrite(6, LOW); 
     // add it to the inputString:
-    inputString += inChar;
-    if ( rc == 0 ) header_hit_counter = 0;
-    if ( rc < 4 ) {
-        if ( inputHeadercode[rc] == (uchar)inChar ) {
-            header_hit_counter++;
+    switch ( rc ) {
+    case 0 ... 3:
+        inputString += inChar;
+        //接收byte跟header比, 相同則繼續下次讀取, 相異則重置rc與inputString
+        if ( (uchar)inChar == inputHeadercode[rc] ) {
+            //checksum = (int)inChar;
+            rc++;
+        } else {
+            checksum = 0;
+            rc = 0;
+            inputString = "";
         }
+        break;
+    case 4 ... 14:
+        inputString += inChar;
+        //checksum += (int)inChar;
+        rc++;
+        break;
+    case 15:
+        inputString += inChar;
+        rc++;
+        break;
+    default:
+        checksum = 0;
+        rc = 0;
+        inputString = "";
+        break;
     }
-    else {
-        
-    } 
-    rc++;
     // if the incoming character is a newline, set a flag
     // so the main loop can do something about it:
-    if ( (rc > 15) && (header_hit_counter == 4) ) {
-        header_hit_counter = 0;
+    if ( (rc == 16) ) {
+        //unsigned int sum_inv = 0xffff - checksum;
+        //String s = decToHex( sum_inv, 4 );
+        //Serial.println( s );
+        //unsigned int mychksum = hexToDec( s.substring(2) );
+        uchar XORsum = inputString[0] ^
+                       inputString[1] ^
+                       inputString[2] ^
+                       inputString[3] ^
+                       inputString[4] ^
+                       inputString[5] ^
+                       inputString[6] ^
+                       inputString[7] ^
+                       inputString[8] ^
+                       inputString[9] ^
+                       inputString[10] ^
+                       inputString[11] ^
+                       inputString[12] ^
+                       inputString[13] ^
+                       inputString[14];
+        
+        if ( inChar ==  XORsum) {
+            chksum_OK = true;
+            checksum = 0;
+        }
         rc = 0;
         inputString_copy = inputString;
         stringComplete = true;
+        rc = 0;
+        inputString = "";
         delay(10);
     } 
   }
+}
+
+unsigned int hexToDec(String hexString) {
+  
+  unsigned int decValue = 0;
+  int nextInt;
+  
+  for (int i = 0; i < hexString.length(); i++) {
+    
+    nextInt = int(hexString.charAt(i));
+    if (nextInt >= 48 && nextInt <= 57) nextInt = map(nextInt, 48, 57, 0, 9);
+    if (nextInt >= 65 && nextInt <= 70) nextInt = map(nextInt, 65, 70, 10, 15);
+    if (nextInt >= 97 && nextInt <= 102) nextInt = map(nextInt, 97, 102, 10, 15);
+    nextInt = constrain(nextInt, 0, 15);
+    
+    decValue = (decValue * 16) + nextInt;
+  }
+  
+  return decValue;
+}
+
+String decToHex(int decValue, byte desiredStringLength) {
+    String hexString = String(decValue, HEX);
+    while (hexString.length() < desiredStringLength) hexString = "0" + hexString;
+    return hexString;
 }
 
 void clearAllState() {
@@ -453,7 +571,6 @@ void Write_MFRC522(uchar addr, uchar val)
 
 	digitalWrite(chipSelectPin, HIGH);
 }
-
 
 /*
 * Function：Read_MFRC522
