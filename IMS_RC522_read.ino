@@ -143,7 +143,7 @@ String inputString_copy = "";
 String inputString = "";         // a string to hold incoming data
 uchar inputHeadercode[4] = {19, 81, 01, 16};
 int header_hit_counter;
-int checksum;
+unsigned int checksum;
 boolean stringComplete = false;  // whether the string is complete
 boolean chksum_OK = false;
 uchar tctrl;
@@ -262,29 +262,15 @@ void loop()
                 switch ( comstate ) {
                 case 0:
                     sendData[4] = 0x16;
-                    //sum_temp = 0;
-                    //for ( mycouter = 0; mycouter < 15; mycouter++ ) {
-                    //    sum_temp += (int)sendData[mycouter];
-                    //}
-                    //mychksum_t = 0xffff - sum_temp;
-                    //s = decToHex( mychksum_t, 4 );
-                    //sendData[15] = (uchar)hexToDec( s.substring(2) );
-                    sendData[15] = sendData[0] ^
-                                   sendData[1] ^
-                                   sendData[2] ^
-                                   sendData[3] ^
-                                   sendData[4] ^
-                                   sendData[5] ^
-                                   sendData[6] ^
-                                   sendData[7] ^
-                                   sendData[8] ^
-                                   sendData[9] ^
-                                   sendData[10] ^
-                                   sendData[11] ^
-                                   sendData[12] ^
-                                   sendData[13] ^
-                                   sendData[14];
+                    sum_temp = 0;
+                    for ( mycouter = 0; mycouter < 15; mycouter++ ) {
+                        sum_temp += (int)sendData[mycouter];
+                    }
+                    mychksum_t = 0xffff - sum_temp;
+                    s = decToHex( mychksum_t, 4 );
+                    sendData[15] = (uchar)hexToDec( s.substring(2) );
                     digitalWrite(7, HIGH);
+                    checksum = 0;
                     Serial.write((const uint8_t*)sendData, sizeof(sendData));
                     digitalWrite(7, LOW);
                     tctrl |= (1 << 1);
@@ -294,6 +280,7 @@ void loop()
                     if ( t1 > 0 ) {
                         if ( stringComplete && chksum_OK ) {
                             if ( inputString_copy[4] == (0x16+0x11) ) {
+                                //Serial.println("OK");
                                 comstate = 2;    //timeout前取得正確ＡＣＫ 則進入狀態2
                                 sendData[13] = 1;
                                 tctrl &= ~(1 << 1);
@@ -333,28 +320,13 @@ void loop()
                     sendData[4] = 0x69;
                     //sendData[23] = 0x1F;
                     c = 0;
-                    //sum_temp = 0;
-                    //for ( mycouter = 0; mycouter < 15; mycouter++ ) {
-                    //    sum_temp += (int)sendData[mycouter];
-                    //}
-                    //mychksum_t = 0xffff - sum_temp;
-                    //s = decToHex( mychksum_t, 4 );
-                    //sendData[15] = (uchar)hexToDec( s.substring(2) );
-                    sendData[15] = sendData[0] ^
-                                   sendData[1] ^
-                                   sendData[2] ^
-                                   sendData[3] ^
-                                   sendData[4] ^
-                                   sendData[5] ^
-                                   sendData[6] ^
-                                   sendData[7] ^
-                                   sendData[8] ^
-                                   sendData[9] ^
-                                   sendData[10] ^
-                                   sendData[11] ^
-                                   sendData[12] ^
-                                   sendData[13] ^
-                                   sendData[14];
+                    sum_temp = 0;
+                    for ( mycouter = 0; mycouter < 15; mycouter++ ) {
+                        sum_temp += (int)sendData[mycouter];
+                    }
+                    mychksum_t = 0xffff - sum_temp;
+                    s = decToHex( mychksum_t, 4 );
+                    sendData[15] = (uchar)hexToDec( s.substring(2) );
                     digitalWrite(7, HIGH);
                     Serial.write((const uint8_t*)sendData, sizeof(sendData));
                     digitalWrite(7, LOW);
@@ -460,12 +432,14 @@ void serialEvent() {
     char inChar = (char)Serial.read();
     digitalWrite(6, LOW); 
     // add it to the inputString:
+    //Serial.println("");
+    //Serial.println(checksum, DEC);
     switch ( rc ) {
     case 0 ... 3:
         inputString += inChar;
         //接收byte跟header比, 相同則繼續下次讀取, 相異則重置rc與inputString
         if ( (uchar)inChar == inputHeadercode[rc] ) {
-            //checksum = (int)inChar;
+            checksum += (uchar)inChar;
             rc++;
         } else {
             checksum = 0;
@@ -475,7 +449,7 @@ void serialEvent() {
         break;
     case 4 ... 14:
         inputString += inChar;
-        //checksum += (int)inChar;
+        checksum += (uchar)inChar;
         rc++;
         break;
     case 15:
@@ -490,28 +464,22 @@ void serialEvent() {
     }
     // if the incoming character is a newline, set a flag
     // so the main loop can do something about it:
-    if ( (rc == 16) ) {
-        //unsigned int sum_inv = 0xffff - checksum;
-        //String s = decToHex( sum_inv, 4 );
+    if ( rc == 16 ) {
+        //Serial.println("");
+        //Serial.println(checksum, DEC);
+        unsigned int sum_inv = 0xffff - checksum;
+        //Serial.println("");
+        //Serial.println(sum_inv, DEC);
+        String s = decToHex( sum_inv, 4 );
+        //Serial.println("");
         //Serial.println( s );
-        //unsigned int mychksum = hexToDec( s.substring(2) );
-        uchar XORsum = inputString[0] ^
-                       inputString[1] ^
-                       inputString[2] ^
-                       inputString[3] ^
-                       inputString[4] ^
-                       inputString[5] ^
-                       inputString[6] ^
-                       inputString[7] ^
-                       inputString[8] ^
-                       inputString[9] ^
-                       inputString[10] ^
-                       inputString[11] ^
-                       inputString[12] ^
-                       inputString[13] ^
-                       inputString[14];
-        
-        if ( inChar ==  XORsum) {
+        unsigned int mychksum = hexToDec( s.substring(2) );
+        //Serial.println("");
+        //Serial.println( mychksum, DEC );
+        //Serial.println( (uchar)inChar, DEC );
+        if ( (uchar)inChar - mychksum == 0 ) {
+            //Serial.println("");
+            //Serial.println( mychksum, DEC );
             chksum_OK = true;
             checksum = 0;
         }
