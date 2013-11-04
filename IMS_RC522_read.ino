@@ -141,7 +141,7 @@ uchar activate_code;
 uchar sendData[16];
 String inputString_copy = "";
 String inputString = "";         // a string to hold incoming data
-uchar inputHeadercode[4] = {19, 81, 01, 16};
+uchar inputHeadercode[4] = {0x19, 0x81, 0x01, 0x16};
 int header_hit_counter;
 unsigned int checksum;
 boolean stringComplete = false;  // whether the string is complete
