@@ -465,18 +465,18 @@ void serialEvent() {
     // if the incoming character is a newline, set a flag
     // so the main loop can do something about it:
     if ( rc == 16 ) {
-        //Serial.println("");
-        //Serial.println(checksum, DEC);
+        Serial.println("");
+        Serial.println(checksum, DEC);
         unsigned int sum_inv = 0xffff - checksum;
-        //Serial.println("");
-        //Serial.println(sum_inv, DEC);
+        Serial.println("");
+        Serial.println(sum_inv, DEC);
         String s = decToHex( sum_inv, 4 );
-        //Serial.println("");
-        //Serial.println( s );
+        Serial.println("");
+        Serial.println( s );
         unsigned int mychksum = hexToDec( s.substring(2) );
-        //Serial.println("");
-        //Serial.println( mychksum, DEC );
-        //Serial.println( (uchar)inChar, DEC );
+        Serial.println("");
+        Serial.println( mychksum, DEC );
+        Serial.println( (uchar)inChar, DEC );
         if ( (uchar)inChar - mychksum == 0 ) {
             //Serial.println("");
             //Serial.println( mychksum, DEC );
