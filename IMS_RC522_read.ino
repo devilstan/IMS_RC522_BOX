@@ -7,6 +7,8 @@
 // the sensor communicates using SPI, so include the library:
 #include <SPI.h>
 #include <avr/wdt.h>
+#include <Timer.h>
+#include <Tone.h>
 
 #define	uchar	unsigned char
 #define	uint	unsigned int
@@ -122,6 +124,7 @@ const int NRSTPD = 5;
 #define     Reserved34			  0x3F
 //-----------------------------------------------
 
+Tone tone1;
 //4 bytes Serial number of card, the 5 bytes is verfiy bytes
 uchar serNum[5];
 uchar serNum_prev[5];
@@ -149,12 +152,14 @@ boolean chksum_OK = false;
 uchar tctrl;
 uchar t1;
 uchar t2;
+uchar t_tone;
 uchar ttotal;
 int c;
 byte readc;
 unsigned int rc;
 
-void setup() {                
+void setup() {
+        tone1.begin(3);  
 	Serial.begin(9600);                       // RFID reader SOUT pin connected to Serial RX pin at 2400bps 
 	// start the SPI library:
 	SPI.begin();
@@ -174,7 +179,7 @@ void setup() {
         TCCR1B &= ~_BV(CS11);      
         TCCR1B |= _BV(CS10);   
         TIMSK1 |= _BV(TOIE1);         // enable timer overflow interrupt
-        TCNT1 = -3125;               // Ticks for 0.2 second @16 MHz,prescale=1024
+        TCNT1 = -125;               // Ticks for 0.2 second @16 MHz,prescale=1024
         tctrl = 0;
         t1 = 255;
         t2 = 255;
@@ -194,13 +199,13 @@ void loop()
         uchar activate = 0;
         
         if ( bitRead(tctrl, 0) == 0 ) {
-            ttotal = 15;    //unit:0.2s
+            ttotal = 425;    //unit:0.2s
         }
         if ( bitRead(tctrl, 1) == 0 ) {
-            t1 = 7;    //unit:0.2s
+            t1 = 175;    //unit:0.2s
         }
         if ( bitRead(tctrl, 2) == 0 ) {
-            t2 = 7;    //unit:0.2s
+            t2 = 225;    //unit:0.2s
         }
 
 	//Look for the card, return the card type
@@ -282,7 +287,7 @@ void loop()
                             if ( inputString_copy[4] == (0x16+0x11) ) {
                                 //Serial.println("OK");
                                 comstate = 2;    //timeout前取得正確ＡＣＫ 則進入狀態2
-                                sendData[13] = 1;
+                                //sendData[13] = 1;
                                 tctrl &= ~(1 << 1);
                                 //Serial.println("0");
                             }
@@ -302,7 +307,7 @@ void loop()
                         }
                         else {
                             comstate = 1;        //timeout前等待接收時 維持狀態1
-                            sendData[13] = 3;
+                            //sendData[13] = 3;
                             //Serial.println("2");
                         }
                     }
@@ -337,6 +342,9 @@ void loop()
                     if ( t2 ) {
                         if ( stringComplete && chksum_OK ) {
                             if ( inputString_copy[4] == (0x69+0x11) ) {
+                                t_tone = 26;
+                                //tone1.play(NOTE_A4);
+                                //tone1.stop();
                                 comstate = 4;    //timeout前取得正確ＡＣＫ 則進入狀態4
                                 sendData[13] = 5;
                                 //Serial.print("1");
@@ -408,14 +416,29 @@ void loop()
 	    MFRC522_Halt(); // command card into hibernation
         }
         //delay(50);
+        switch ( t_tone ) {
+            case 0:
+                tone1.stop();
+                break;
+            case 1 ... 10:
+                tone1.play(NOTE_A4);
+                break;
+            case 11 ... 15:
+                tone1.stop();
+                break;
+            case 16 ... 26:
+                tone1.play(NOTE_A4);
+                break;
+        }
 }
 
 ISR (TIMER1_OVF_vect)
 {   
     if ( t1 > 0 ) t1--;
     if ( t2 > 0 ) t2--;
+    if ( t_tone > 0 ) t_tone--;
     if ( ttotal > 0 ) ttotal--;
-    TCNT1 = -3125;               // Ticks for 1 second @16 MHz,prescale=1024
+    TCNT1 = -125;               // Ticks for 1 second @16 MHz,prescale=1024
 }
 
 /*
@@ -466,17 +489,17 @@ void serialEvent() {
     // so the main loop can do something about it:
     if ( rc == 16 ) {
         Serial.println("");
-        Serial.println(checksum, DEC);
+        //Serial.println(checksum, DEC);
         unsigned int sum_inv = 0xffff - checksum;
-        Serial.println("");
-        Serial.println(sum_inv, DEC);
+        //Serial.println("");
+        //Serial.println(sum_inv, DEC);
         String s = decToHex( sum_inv, 4 );
-        Serial.println("");
-        Serial.println( s );
+        //Serial.println("");
+        //Serial.println( s );
         unsigned int mychksum = hexToDec( s.substring(2) );
-        Serial.println("");
-        Serial.println( mychksum, DEC );
-        Serial.println( (uchar)inChar, DEC );
+        //Serial.println("");
+        //Serial.println( mychksum, DEC );
+        //Serial.println( (uchar)inChar, DEC );
         if ( (uchar)inChar - mychksum == 0 ) {
             //Serial.println("");
             //Serial.println( mychksum, DEC );
@@ -488,7 +511,7 @@ void serialEvent() {
         stringComplete = true;
         rc = 0;
         inputString = "";
-        delay(10);
+        //delay(10);
     } 
   }
 }
