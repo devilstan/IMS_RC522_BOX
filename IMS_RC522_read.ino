@@ -142,6 +142,7 @@ uchar sectorKeyA[16][16] = {{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
 uchar comstate;
 uchar activate_code;
 uchar sendData[16];
+uchar readData[16];
 String inputString_copy = "";
 String inputString = "";         // a string to hold incoming data
 uchar inputHeadercode[4] = {0x19, 0x81, 0x01, 0x16};
@@ -152,14 +153,18 @@ boolean chksum_OK = false;
 uchar tctrl;
 uchar t1;
 uchar t2;
-uchar t_tone;
-uchar ttotal;
+uchar t_return_tone;
+uchar t_check_tone;
+boolean return_flag, check_flag;
+unsigned int ttotal;
 int c;
 byte readc;
 unsigned int rc;
 
 void setup() {
-        tone1.begin(3);  
+        tone1.begin(3);
+        return_flag = false;
+        check_flag = false;  
 	Serial.begin(9600);                       // RFID reader SOUT pin connected to Serial RX pin at 2400bps 
 	// start the SPI library:
 	SPI.begin();
@@ -276,6 +281,7 @@ void loop()
                     sendData[15] = (uchar)hexToDec( s.substring(2) );
                     digitalWrite(7, HIGH);
                     checksum = 0;
+                    memset( readData, 0, 16 );
                     Serial.write((const uint8_t*)sendData, sizeof(sendData));
                     digitalWrite(7, LOW);
                     tctrl |= (1 << 1);
@@ -333,6 +339,7 @@ void loop()
                     s = decToHex( mychksum_t, 4 );
                     sendData[15] = (uchar)hexToDec( s.substring(2) );
                     digitalWrite(7, HIGH);
+                    memset( readData, 0, 16 );
                     Serial.write((const uint8_t*)sendData, sizeof(sendData));
                     digitalWrite(7, LOW);
                     tctrl |= (1 << 2);
@@ -342,9 +349,19 @@ void loop()
                     if ( t2 ) {
                         if ( stringComplete && chksum_OK ) {
                             if ( inputString_copy[4] == (0x69+0x11) ) {
-                                t_tone = 26;
-                                //tone1.play(NOTE_A4);
-                                //tone1.stop();
+                                //Serial.println("");
+                                //Serial.print( readData[14], DEC );
+                                //Serial.println("");
+                                //還入code = 0x01
+                                if ( readData[14] == 0x01 ) { 
+                                    t_return_tone = 26+4;
+                                    return_flag = true;
+                                }
+                                //借出code = 0x01;
+                                if ( readData[14] == 0x02 ) {
+                                    t_check_tone = 10+4;
+                                    check_flag = true;
+                                }
                                 comstate = 4;    //timeout前取得正確ＡＣＫ 則進入狀態4
                                 sendData[13] = 5;
                                 //Serial.print("1");
@@ -416,19 +433,33 @@ void loop()
 	    MFRC522_Halt(); // command card into hibernation
         }
         //delay(50);
-        switch ( t_tone ) {
-            case 0:
-                tone1.stop();
-                break;
-            case 1 ... 10:
-                tone1.play(NOTE_A4);
-                break;
-            case 11 ... 15:
-                tone1.stop();
-                break;
-            case 16 ... 26:
-                tone1.play(NOTE_A4);
-                break;
+        if ( return_flag ) {
+            switch ( t_return_tone ) {
+                case 0 ... 3:
+                    tone1.stop();
+                    return_flag = false;
+                    break;
+                case 4 ... 14:
+                    tone1.play(NOTE_A4);
+                    break;
+                case 15 ... 19:
+                    tone1.stop();
+                    break;
+                case 20 ... 30:
+                    tone1.play(NOTE_A4);
+                    break;
+            }
+        }
+        if ( check_flag ) {
+            switch ( t_check_tone ) {
+                case 0 ... 3:
+                    tone1.stop();
+                    check_flag = false;
+                    break;
+                case 4 ... 14:
+                    tone1.play(NOTE_A4);
+                    break;
+            }
         }
 }
 
@@ -436,7 +467,8 @@ ISR (TIMER1_OVF_vect)
 {   
     if ( t1 > 0 ) t1--;
     if ( t2 > 0 ) t2--;
-    if ( t_tone > 0 ) t_tone--;
+    if ( t_return_tone > 0 ) t_return_tone--;
+    if ( t_check_tone ) t_check_tone--;
     if ( ttotal > 0 ) ttotal--;
     TCNT1 = -125;               // Ticks for 1 second @16 MHz,prescale=1024
 }
@@ -460,6 +492,7 @@ void serialEvent() {
     switch ( rc ) {
     case 0 ... 3:
         inputString += inChar;
+        readData[rc] = inChar;
         //接收byte跟header比, 相同則繼續下次讀取, 相異則重置rc與inputString
         if ( (uchar)inChar == inputHeadercode[rc] ) {
             checksum += (uchar)inChar;
@@ -472,11 +505,13 @@ void serialEvent() {
         break;
     case 4 ... 14:
         inputString += inChar;
+        readData[rc] = inChar;
         checksum += (uchar)inChar;
         rc++;
         break;
     case 15:
         inputString += inChar;
+        readData[rc] = inChar;
         rc++;
         break;
     default:
