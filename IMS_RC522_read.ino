@@ -155,8 +155,8 @@ uchar tctrl;
 unsigned int ttotal;
 unsigned int t1;
 unsigned int t2;
-uchar t_return_tone;
-uchar t_check_tone;
+unsigned int t_return_tone;
+unsigned int t_check_tone;
 boolean return_flag, check_flag;
 int c;
 byte readc;
@@ -370,7 +370,7 @@ void loop()
                                 //Serial.println("");
                                 //還入code = 0x01
                                 if ( readData[14] == 0x01 ) { 
-                                    t_return_tone = 240;
+                                    t_return_tone = 800;
                                     return_flag = true;
                                 }
                                 //借出code = 0x01;
@@ -452,7 +452,34 @@ void loop()
         if ( return_flag ) {
             //tone1.play(NOTE_A4);
             //return_flag = false;
-            
+            switch ( t_return_tone ) {
+                case 0 ... 24:
+                    tone1.stop();
+                    return_flag = false;
+                    break;
+                case 25 ... 125:
+                    tone1.play(NOTE_G7);
+                    break;
+                case 160 ... 260:
+                    tone1.play(NOTE_D7);
+                    break;
+                case 295 ... 395:
+                    tone1.play(NOTE_C7);
+                    break;
+                case 430 ... 530:
+                    tone1.play(NOTE_E7);
+                    break;
+                case 565 ... 665:
+                    tone1.play(NOTE_G6);
+                    break;
+                case 700 ... 800:
+                    tone1.play(NOTE_E6);
+                    break;
+                default:
+                    tone1.stop();
+                    break;
+            }
+            /*
             switch ( t_return_tone ) {
                 case 0 ... 24:
                     tone1.stop();
@@ -468,6 +495,7 @@ void loop()
                     tone1.play(NOTE_A4);
                     break;
             }
+            */
             
         }
         if ( check_flag ) {
