@@ -7,8 +7,9 @@
 // the sensor communicates using SPI, so include the library:
 #include <SPI.h>
 #include <avr/wdt.h>
-#include <Timer.h>
+//#include <Timer.h>
 #include <Tone.h>
+#include <TimerOne.h>
 
 #define	uchar	unsigned char
 #define	uint	unsigned int
@@ -151,12 +152,12 @@ unsigned int checksum;
 boolean stringComplete = false;  // whether the string is complete
 boolean chksum_OK = false;
 uchar tctrl;
-uchar t1;
-uchar t2;
+unsigned int ttotal;
+unsigned int t1;
+unsigned int t2;
 uchar t_return_tone;
 uchar t_check_tone;
 boolean return_flag, check_flag;
-unsigned int ttotal;
 int c;
 byte readc;
 unsigned int rc;
@@ -179,19 +180,34 @@ void setup() {
 	MFRC522_Init();
         comstate = 0;
         
+        /*
         TCCR1A = 0x00;                // Normal mode, just as a Timer
         TCCR1B |= _BV(CS12);          // prescaler = CPU clock/1024
         TCCR1B &= ~_BV(CS11);      
         TCCR1B |= _BV(CS10);   
         TIMSK1 |= _BV(TOIE1);         // enable timer overflow interrupt
         TCNT1 = -125;               // Ticks for 0.2 second @16 MHz,prescale=1024
+        */
+        
+        Timer1.initialize(1000);
+        Timer1.attachInterrupt(one_ms_timer);
         tctrl = 0;
         t1 = 255;
         t2 = 255;
         ttotal = 255;
         rc = 0;
         checksum = 0;
-        wdt_enable (WDTO_1S);  // reset after one second, if no "pat the dog" received
+        wdt_enable(WDTO_1S);  // reset after one second, if no "pat the dog" received
+        
+}
+
+void one_ms_timer()
+{
+    if ( t1 > 0 ) t1--;
+    if ( t2 > 0 ) t2--;
+    if ( t_return_tone > 0 ) t_return_tone--;
+    if ( t_check_tone ) t_check_tone--;
+    if ( ttotal > 0 ) ttotal--;
 }
 
 void loop()
@@ -204,13 +220,13 @@ void loop()
         uchar activate = 0;
         
         if ( bitRead(tctrl, 0) == 0 ) {
-            ttotal = 425;    //unit:0.2s
+            ttotal = 4400;    //unit:1ms
         }
         if ( bitRead(tctrl, 1) == 0 ) {
-            t1 = 175;    //unit:0.2s
+            t1 = 1400;    //unit:1ms
         }
         if ( bitRead(tctrl, 2) == 0 ) {
-            t2 = 225;    //unit:0.2s
+            t2 = 3000;    //unit:1ms
         }
 
 	//Look for the card, return the card type
@@ -354,12 +370,12 @@ void loop()
                                 //Serial.println("");
                                 //還入code = 0x01
                                 if ( readData[14] == 0x01 ) { 
-                                    t_return_tone = 26+4;
+                                    t_return_tone = 240;
                                     return_flag = true;
                                 }
                                 //借出code = 0x01;
                                 if ( readData[14] == 0x02 ) {
-                                    t_check_tone = 10+4;
+                                    t_check_tone = 112;
                                     check_flag = true;
                                 }
                                 comstate = 4;    //timeout前取得正確ＡＣＫ 則進入狀態4
@@ -434,35 +450,44 @@ void loop()
         }
         //delay(50);
         if ( return_flag ) {
+            //tone1.play(NOTE_A4);
+            //return_flag = false;
+            
             switch ( t_return_tone ) {
-                case 0 ... 3:
+                case 0 ... 24:
                     tone1.stop();
                     return_flag = false;
                     break;
-                case 4 ... 14:
+                case 25 ... 112:
                     tone1.play(NOTE_A4);
                     break;
-                case 15 ... 19:
+                case 113 ... 152:
                     tone1.stop();
                     break;
-                case 20 ... 30:
+                case 153 ... 240:
                     tone1.play(NOTE_A4);
                     break;
             }
+            
         }
         if ( check_flag ) {
+            //tone1.stop();
+            //check_flag = false;
+            
             switch ( t_check_tone ) {
-                case 0 ... 3:
+                case 0 ... 24:
                     tone1.stop();
                     check_flag = false;
                     break;
-                case 4 ... 14:
+                case 25 ... 112:
                     tone1.play(NOTE_A4);
                     break;
             }
+            
         }
 }
 
+/*
 ISR (TIMER1_OVF_vect)
 {   
     if ( t1 > 0 ) t1--;
@@ -472,6 +497,7 @@ ISR (TIMER1_OVF_vect)
     if ( ttotal > 0 ) ttotal--;
     TCNT1 = -125;               // Ticks for 1 second @16 MHz,prescale=1024
 }
+*/
 
 /*
   SerialEvent occurs whenever a new data comes in the
