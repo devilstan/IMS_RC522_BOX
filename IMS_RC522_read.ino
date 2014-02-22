@@ -7,15 +7,13 @@
 // the sensor communicates using SPI, so include the library:
 #include <SPI.h>
 #include <avr/wdt.h>
-//#include <Timer.h>
 #include <Tone.h>
 #include <TimerOne.h>
+#include <rtttl.h>
 
 #define	uchar	unsigned char
 #define	uint	unsigned int
 
-//data array maxium length
-#define MAX_LEN 16
 
 /////////////////////////////////////////////////////////////////////
 //set the pin
@@ -125,7 +123,14 @@ const int NRSTPD = 5;
 #define     Reserved34			  0x3F
 //-----------------------------------------------
 
-Tone tone1;
+//IMS definition
+#define     MAX_LEN                 16              //
+#define     SIZE_R2D2               16
+#define     SIZE_ONE_UP             6
+#define     SIZE_RETURN             2
+#define     SIZE_CHECK              1
+#define     SIZE_BEEP               1
+
 //4 bytes Serial number of card, the 5 bytes is verfiy bytes
 uchar serNum[5];
 uchar serNum_prev[5];
@@ -140,6 +145,40 @@ uchar sectorKeyA[16][16] = {{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
 							{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
 							{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
 							};
+
+//IMS declaration
+boolean return_flag, check_flag, open_flag, close_flag, beep_flag, default_flag;
+const int octave = 0;
+const char song_beep[] PROGMEM = "check:d=8,o=5,b=250:c6";
+const char song_check[] PROGMEM = "check:d=8,o=5,b=250:e";
+const char song_return[] PROGMEM = "return:d=8,o=5,b=250:e,32p,e";
+const char song_1up[] PROGMEM = "return:d=8,o=6,b=250:e6,32p,g6,32p,e7,32p,c7,32p,d7,32p,g7";
+const char song_r2d2[] PROGMEM = "return:d=8,o=5,b=600:a7,32p,g7,32p,e7,32p,c7,32p,d7,32p,b7,32p,f7,32p,c8,32p,a7,32p,g7,32p,e7,32p,c7,32p,d7,32p,b7,32p,f7,32p,c8";
+const char song_default[] PROGMEM = "Indiana:d=4,o=5,b=250:e,8p,8f,8g,8p,1c6,8p.,d,8p,8e,1f,p.,g,8p,8a,8b,8p,1f6,p,a,8p,8b,2c6,2d6,2e6,e,8p,8f,8g,8p,1c6,p,d6,8p,8e6,1f.6,g,8p,8g,e.6,8p,d6,8p,8g,e.6,8p,d6,8p,8g,f.6,8p,e6,8p,8d6,2c6";
+
+Rtttl player;
+/*
+Tone tone1;
+
+int r2d2_counter = 0;
+int r2d2[16] =              { NOTE_A7, NOTE_G7, NOTE_E7, NOTE_C7, 
+                              NOTE_D7, NOTE_B7, NOTE_F7, NOTE_C8, 
+                              NOTE_A7, NOTE_G7, NOTE_E7, NOTE_C7, 
+                              NOTE_D7, NOTE_B7, NOTE_F7, NOTE_C8 };
+
+int one_up_counter = 0;
+int one_up[6] =             { NOTE_E6, NOTE_G6, NOTE_E7, NOTE_C7, 
+                              NOTE_D7, NOTE_G7 };
+
+int return_counter = 0;
+int return_tone[2] =        { NOTE_A4, NOTE_A4 };
+
+int check_counter = 0;
+int check_tone[1] =         { NOTE_A4 };
+
+int beep_counter = 0;
+int beep_tone[1] =          { NOTE_C6 };
+*/
 uchar comstate;
 uchar activate_code;
 uchar sendData[16];
@@ -147,67 +186,61 @@ uchar readData[16];
 String inputString_copy = "";
 String inputString = "";         // a string to hold incoming data
 uchar inputHeadercode[4] = {0x19, 0x81, 0x01, 0x16};
-int header_hit_counter;
+//int header_hit_counter;
 unsigned int checksum;
 boolean stringComplete = false;  // whether the string is complete
 boolean chksum_OK = false;
 uchar tctrl;
-unsigned int ttotal;
-unsigned int t1;
-unsigned int t2;
-unsigned int t_return_tone;
-unsigned int t_check_tone;
-boolean return_flag, check_flag;
+volatile int  ttotal, t1, t2;
+volatile int t_return_tone, t_check_tone, t_open_tone, t_close_tone, t_beep_tone;
+volatile int t_serial_hang;
+
 int c;
 byte readc;
-unsigned int rc;
+volatile int rc = 0;
 
 void setup() {
-        tone1.begin(3);
-        return_flag = false;
-        check_flag = false;  
-	Serial.begin(9600);                       // RFID reader SOUT pin connected to Serial RX pin at 2400bps 
-	// start the SPI library:
-	SPI.begin();
-        pinMode(6, OUTPUT); 
-        pinMode(7, OUTPUT); 
-	pinMode(chipSelectPin,OUTPUT);             // Set digital pin 10 as OUTPUT to connect it to the RFID /ENABLE pin 
-	digitalWrite(chipSelectPin, LOW);          // Activate the RFID reader
-	pinMode(NRSTPD,OUTPUT);               // Set digital pin 10 , Not Reset and Power-down
-	digitalWrite(NRSTPD, HIGH);
-        inputString.reserve(16);
-        inputString_copy.reserve(16);
-	MFRC522_Init();
-        comstate = 0;
-        
-        /*
-        TCCR1A = 0x00;                // Normal mode, just as a Timer
-        TCCR1B |= _BV(CS12);          // prescaler = CPU clock/1024
-        TCCR1B &= ~_BV(CS11);      
-        TCCR1B |= _BV(CS10);   
-        TIMSK1 |= _BV(TOIE1);         // enable timer overflow interrupt
-        TCNT1 = -125;               // Ticks for 0.2 second @16 MHz,prescale=1024
-        */
-        
-        Timer1.initialize(1000);
-        Timer1.attachInterrupt(one_ms_timer);
-        tctrl = 0;
-        t1 = 255;
-        t2 = 255;
-        ttotal = 255;
-        rc = 0;
-        checksum = 0;
-        wdt_enable(WDTO_1S);  // reset after one second, if no "pat the dog" received
-        
+    //set Timer1 by using Timer-one library
+    Timer1.initialize(1000);
+    Timer1.attachInterrupt(one_ms_timer);
+    //tone1.begin(3);
+    player.begin(8);
+    //player.play_P(song_r2d2, octave);
+    //return_flag = false;
+    //check_flag = false;  
+    Serial.begin(115200);                       // RFID reader SOUT pin connected to Serial RX pin at 2400bps 
+    // start the SPI library:
+    SPI.begin();
+    pinMode(6, OUTPUT); 
+    pinMode(7, OUTPUT); 
+    pinMode(chipSelectPin,OUTPUT);             // Set digital pin 10 as OUTPUT to connect it to the RFID /ENABLE pin 
+    digitalWrite(chipSelectPin, LOW);          // Activate the RFID reader
+    pinMode(NRSTPD,OUTPUT);                    // Set digital pin 10 , Not Reset and Power-down
+    digitalWrite(NRSTPD, HIGH);
+    inputString.reserve(16);
+    inputString_copy.reserve(16);
+    MFRC522_Init();
+    //IMS definition
+    comstate = 0;
+    tctrl = 0;
+    rc = 0;
+    checksum = 0;       
+    //wdt_enable(WDTO_1S);                       // reset after one second, if no "pat the dog" received
 }
 
 void one_ms_timer()
 {
-    if ( t1 > 0 ) t1--;
-    if ( t2 > 0 ) t2--;
+    if ( ttotal > 0 )        ttotal--;
+    if ( t1 > 0 )            t1--;
+    if ( t2 > 0 )            t2--;
+    /*
     if ( t_return_tone > 0 ) t_return_tone--;
-    if ( t_check_tone ) t_check_tone--;
-    if ( ttotal > 0 ) ttotal--;
+    if ( t_check_tone > 0 )      t_check_tone--;
+    if ( t_open_tone > 0 )       t_open_tone--;
+    if ( t_close_tone > 0 )      t_close_tone--;
+    if ( t_beep_tone > 0 )      t_beep_tone--;
+    */
+    if ( t_serial_hang ) t_serial_hang--;
 }
 
 void loop()
@@ -227,6 +260,9 @@ void loop()
         }
         if ( bitRead(tctrl, 2) == 0 ) {
             t2 = 3000;    //unit:1ms
+        }
+        if ( bitRead(tctrl, 3) == 0 ) {
+            t_serial_hang = 1000;
         }
 
 	//Look for the card, return the card type
@@ -265,9 +301,12 @@ void loop()
         }
         //RFID流程正確，啟動處理區分activate_code = 0x16(其他地方不能修改)
         if ( activate == 0x07 ) {
+            beep_flag = true;
             memcpy(sendData, inputHeadercode, 4);
             activate_code = 0x16;
             tctrl |= (1 << 0);  //啟動總逾時時間
+            MFRC522_Halt(); // command card into hibernation
+            delay(10);
         }
         //檢查總逾時時間
         if ( !ttotal ) {
@@ -277,7 +316,7 @@ void loop()
             tctrl &= ~(1 << 2);
         }
         //訊息處理流程
-        wdt_reset();
+        //wdt_reset();
         int sum_temp = 0;
         int mychksum_t = 0;
         String s;
@@ -295,11 +334,15 @@ void loop()
                     mychksum_t = 0xffff - sum_temp;
                     s = decToHex( mychksum_t, 4 );
                     sendData[15] = (uchar)hexToDec( s.substring(2) );
-                    digitalWrite(7, HIGH);
                     checksum = 0;
                     memset( readData, 0, 16 );
+                    //讀取卡號後，第一次送信，處理區分＝0x16
+                    digitalWrite(7, HIGH);
                     Serial.write((const uint8_t*)sendData, sizeof(sendData));
+                    Serial.flush();
                     digitalWrite(7, LOW);
+                    delay(10);
+                    //送信完成後，啟動t1計時器
                     tctrl |= (1 << 1);
                     comstate = 1;
                     break;
@@ -337,7 +380,7 @@ void loop()
                         comstate = 0;            //timeout! 則回到狀態0
                         sendData[13] = 4;
                         tctrl &= ~(1 << 1);
-                        header_hit_counter = 0;
+                        //header_hit_counter = 0;
                         rc = 0;
                         //Serial.println("c1 timeout and return");
                     }
@@ -345,7 +388,6 @@ void loop()
                     break;
                 case 2:
                     sendData[4] = 0x69;
-                    //sendData[23] = 0x1F;
                     c = 0;
                     sum_temp = 0;
                     for ( mycouter = 0; mycouter < 15; mycouter++ ) {
@@ -357,7 +399,9 @@ void loop()
                     digitalWrite(7, HIGH);
                     memset( readData, 0, 16 );
                     Serial.write((const uint8_t*)sendData, sizeof(sendData));
+                    Serial.flush();
                     digitalWrite(7, LOW);
+                    delay(10);
                     tctrl |= (1 << 2);
                     comstate = 3;
                     break;
@@ -368,21 +412,31 @@ void loop()
                                 //Serial.println("");
                                 //Serial.print( readData[14], DEC );
                                 //Serial.println("");
-                                //還入code = 0x01
-                                if ( readData[14] == 0x01 ) { 
-                                    t_return_tone = 800;
-                                    return_flag = true;
-                                }
-                                //借出code = 0x01;
-                                if ( readData[14] == 0x02 ) {
-                                    t_check_tone = 112;
-                                    check_flag = true;
+                                switch ( (unsigned int)readData[14] ) {
+                                    case 0x01: //還入code = 0x01
+                                        return_flag = true;
+                                        break;
+                                    case 0x02: //借出code = 0x02;
+                                        check_flag = true;
+                                        break;
+                                    case 0x03: //開啓code = 0x03;
+                                        open_flag = true;
+                                        break;
+                                    case 0x04: //關閉code = 0x04;
+                                        close_flag = true;
+                                        break;
+                                    case 0x05:
+                                        break;
+                                    default:
+                                        default_flag = true;
+                                        break;
                                 }
                                 comstate = 4;    //timeout前取得正確ＡＣＫ 則進入狀態4
                                 sendData[13] = 5;
                                 //Serial.print("1");
                                 clearAllState();
                                 tctrl &= ~(1 << 2);
+                                delay(10);
                             }
                             else {
                                 comstate = 2;    //timeout前取得錯誤ＡＣＫ 則回到狀態2
@@ -400,7 +454,7 @@ void loop()
                         }
                         else {
                             comstate = 3;        //timeout前等待接收時 維持狀態3
-                            sendData[13] = 7;
+                            //sendData[13] = 7;
                             //Serial.print("3");
                         }
                     }
@@ -409,7 +463,7 @@ void loop()
                         comstate = 2;            //timeout! 則回到狀態2
                         sendData[13] = 8;
                         tctrl &= ~(1 << 2);
-                        header_hit_counter = 0;
+                        //header_hit_counter = 0;
                         rc = 0;
                         //Serial.println("c3 timeout and return");
                     }
@@ -419,6 +473,7 @@ void loop()
                     comstate = 0;
                     break;
                 }
+            break;
         default:
             break;
         }
@@ -426,7 +481,7 @@ void loop()
 	//Card Reader
 	blockAddr = 7; //data block 7
 	//status = MFRC522_Auth (PICC_AUTHENT1A, blockAddr, sectorKeyA [blockAddr / 4], serNum); //authentication
-	
+	/*
         status = MI_ERR;
         if (status == MI_OK)
 	{
@@ -444,75 +499,142 @@ void loop()
 			Serial.println ("");
 		}
 	}
+        */
 	//Serial.println ("");
-        if ( activate == 0x07 ) {
-	    MFRC522_Halt(); // command card into hibernation
+        //if ( activate == 0x07 ) {
+	//    MFRC522_Halt(); // command card into hibernation
+        //}
+        //delay(10);
+        if ( open_flag ) {
+            player.play_P(song_1up, octave);
+            open_flag = false;
         }
-        //delay(50);
-        if ( return_flag ) {
-            //tone1.play(NOTE_A4);
-            //return_flag = false;
-            switch ( t_return_tone ) {
-                case 0 ... 24:
-                    tone1.stop();
-                    return_flag = false;
-                    break;
-                case 25 ... 125:
-                    tone1.play(NOTE_G7);
-                    break;
-                case 160 ... 260:
-                    tone1.play(NOTE_D7);
-                    break;
-                case 295 ... 395:
-                    tone1.play(NOTE_C7);
-                    break;
-                case 430 ... 530:
-                    tone1.play(NOTE_E7);
-                    break;
-                case 565 ... 665:
-                    tone1.play(NOTE_G6);
-                    break;
-                case 700 ... 800:
-                    tone1.play(NOTE_E6);
-                    break;
-                default:
-                    tone1.stop();
-                    break;
-            }
-            /*
-            switch ( t_return_tone ) {
-                case 0 ... 24:
-                    tone1.stop();
-                    return_flag = false;
-                    break;
-                case 25 ... 112:
-                    tone1.play(NOTE_A4);
-                    break;
-                case 113 ... 152:
-                    tone1.stop();
-                    break;
-                case 153 ... 240:
-                    tone1.play(NOTE_A4);
-                    break;
-            }
-            */
-            
+        if ( close_flag ) {
+            player.play_P(song_r2d2, octave);
+            close_flag = false;
         }
         if ( check_flag ) {
-            //tone1.stop();
-            //check_flag = false;
-            
-            switch ( t_check_tone ) {
-                case 0 ... 24:
-                    tone1.stop();
-                    check_flag = false;
-                    break;
-                case 25 ... 112:
-                    tone1.play(NOTE_A4);
-                    break;
-            }
-            
+            player.play_P(song_check, octave);
+            check_flag = false;
         }
+        if ( return_flag ) {
+            player.play_P(song_return, octave);
+            return_flag = false;
+        }
+        if ( beep_flag ) {
+            player.play_P(song_beep, octave);
+            beep_flag = false;
+        }
+        if ( default_flag ) {
+            player.play_P(song_default, octave);
+            default_flag = false;
+        }
+        /*
+        if ( open_flag ) {
+            if ( t_open_tone == 0 ) {
+                if ( tone1.isPlaying() == false ) {
+                    if ( r2d2_counter < SIZE_R2D2 ) {
+                        tone1.play( r2d2[r2d2_counter], 20 );
+                        r2d2_counter++;
+                        //t_open_tone = 35;
+                    }
+                    else {
+                        r2d2_counter = 0;
+                        open_flag = false;
+                    }
+                }
+                
+            }
+            delay(1);
+        }
+        else {
+            r2d2_counter = 0;
+        }
+        
+        if ( close_flag ) { 
+            if ( t_close_tone == 0 ) {
+                if ( tone1.isPlaying() == false ) {
+                    if ( one_up_counter < SIZE_ONE_UP ) {
+                        tone1.play( one_up[one_up_counter], 100 );
+                        one_up_counter++;
+                        //t_close_tone = 35;
+                    }
+                    else {
+                        one_up_counter = 0;
+                        close_flag = false;
+                    }
+                }
+                
+            }
+            delay(1);
+        }
+        else {
+            one_up_counter = 0;
+        }
+        
+        if ( return_flag ) { 
+            if ( t_return_tone == 0 ) {
+                if ( tone1.isPlaying() == false ) {
+                    if ( return_counter < SIZE_RETURN ) {
+                        tone1.play( return_tone[return_counter], 100 );
+                        return_counter++;
+                        //t_return_tone = 35;
+                    }
+                    else {
+                        return_counter = 0;
+                        return_flag = false;
+                    }
+                }
+                
+            }
+            delay(1);
+        }
+        else {
+            return_counter = 0;
+        }
+
+        if ( check_flag ) { 
+            if ( t_check_tone == 0 ) {
+                if ( tone1.isPlaying() == false ) {
+                    if ( check_counter < SIZE_CHECK ) {
+                        tone1.play( check_tone[check_counter], 100 );
+                        check_counter++;
+                        //t_check_tone = 35;
+                    }
+                    else {
+                        check_counter = 0;
+                        check_flag = false;
+                    }
+                }
+            }
+            delay(1);
+        }
+        else {
+            check_counter = 0;
+        }
+        
+        if ( beep_flag ) { 
+            if ( t_beep_tone == 0 ) {
+                if ( tone1.isPlaying() == false ) {
+                    if ( beep_counter < SIZE_CHECK ) {
+                        tone1.play( beep_tone[beep_counter], 100 );
+                        beep_counter++;
+                        t_beep_tone = 35;
+                    }
+                    else {
+                        beep_counter = 0;
+                        beep_flag = false;
+                    }
+                }
+                
+            }
+            delay(1);
+        }
+        else {
+            beep_counter = 0;
+        }
+        */
+        //delay(1);
 }
 
 /*
@@ -534,75 +656,77 @@ ISR (TIMER1_OVF_vect)
  response.  Multiple bytes of data may be available.
  */
 void serialEvent() {
-    
-  while (Serial.available()) {
-    // get the new byte:
-    digitalWrite(6, HIGH);
-    char inChar = (char)Serial.read();
-    digitalWrite(6, LOW); 
-    // add it to the inputString:
-    //Serial.println("");
-    //Serial.println(checksum, DEC);
-    switch ( rc ) {
-    case 0 ... 3:
-        inputString += inChar;
-        readData[rc] = inChar;
-        //接收byte跟header比, 相同則繼續下次讀取, 相異則重置rc與inputString
-        if ( (uchar)inChar == inputHeadercode[rc] ) {
-            checksum += (uchar)inChar;
-            rc++;
-        } else {
-            checksum = 0;
-            rc = 0;
-            inputString = "";
-        }
-        break;
-    case 4 ... 14:
-        inputString += inChar;
-        readData[rc] = inChar;
-        checksum += (uchar)inChar;
-        rc++;
-        break;
-    case 15:
-        inputString += inChar;
-        readData[rc] = inChar;
-        rc++;
-        break;
-    default:
-        checksum = 0;
-        rc = 0;
-        inputString = "";
-        break;
-    }
-    // if the incoming character is a newline, set a flag
-    // so the main loop can do something about it:
-    if ( rc == 16 ) {
-        Serial.println("");
+    while (Serial.available()) {
+        tctrl &= ~(1 << 3);
+        // get the new byte:
+        digitalWrite(6, HIGH);
+        char inChar = (char)Serial.read();
+        //digitalWrite(6, LOW); 
+        // add it to the inputString:
+        //Serial.println("");
         //Serial.println(checksum, DEC);
-        unsigned int sum_inv = 0xffff - checksum;
-        //Serial.println("");
-        //Serial.println(sum_inv, DEC);
-        String s = decToHex( sum_inv, 4 );
-        //Serial.println("");
-        //Serial.println( s );
-        unsigned int mychksum = hexToDec( s.substring(2) );
-        //Serial.println("");
-        //Serial.println( mychksum, DEC );
-        //Serial.println( (uchar)inChar, DEC );
-        if ( (uchar)inChar - mychksum == 0 ) {
+        switch ( rc ) {
+            case 0 ... 3:
+                inputString += inChar;
+                readData[rc] = inChar;
+                //接收byte跟header比, 相同則繼續下次讀取, 相異則重置rc與inputString
+                if ( (uchar)inChar == inputHeadercode[rc] ) {
+                    checksum += (uchar)inChar;
+                    rc++;
+                } else {
+                    checksum = 0;
+                    rc = 0;
+                    inputString = "";
+                }
+                break;
+            case 4 ... 14:
+                inputString += inChar;
+                readData[rc] = inChar;
+                checksum += (uchar)inChar;
+                rc++;
+                break;
+            case 15:
+                inputString += inChar;
+                readData[rc] = inChar;
+                rc++;
+                break;
+            default:
+                checksum = 0;
+                rc = 0;
+                inputString = "";
+                break;
+        }
+        // if the incoming character is a newline, set a flag
+        // so the main loop can do something about it:
+        if ( rc == 16 ) {
+            digitalWrite(6, LOW);
+            Serial.println("");
+            //Serial.println(checksum, DEC);
+            unsigned int sum_inv = 0xffff - checksum;
+            //Serial.println("");
+            //Serial.println(sum_inv, DEC);
+            String s = decToHex( sum_inv, 4 );
+            //Serial.println("");
+            //Serial.println( s );
+            unsigned int mychksum = hexToDec( s.substring(2) );
             //Serial.println("");
             //Serial.println( mychksum, DEC );
-            chksum_OK = true;
-            checksum = 0;
+            //Serial.println( (uchar)inChar, DEC );
+            if ( (uchar)inChar - mychksum == 0 ) {
+                //Serial.println("");
+                //Serial.println( mychksum, DEC );
+                chksum_OK = true;
+                checksum = 0;
+            }
+            rc = 0;
+            inputString_copy = inputString;
+            stringComplete = true;
+            rc = 0;
+            inputString = "";
+            //delay(10);
         }
-        rc = 0;
-        inputString_copy = inputString;
-        stringComplete = true;
-        rc = 0;
-        inputString = "";
-        //delay(10);
-    } 
-  }
+        tctrl |= (1 << 3);
+    }
 }
 
 unsigned int hexToDec(String hexString) {
